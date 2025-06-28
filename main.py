@@ -74,7 +74,7 @@ def full_backup(backup_file, config):
         "--single-transaction",
         "--routines",
         "--triggers",
-        "--set-gtid-purged=OFF",
+        "--set-gtid-purged=OFF",   # <— evita SET @@GLOBAL.GTID_PURGED
         config['DB_NAME']
     ]
     with open(backup_file, "w", encoding="utf-8") as f:
@@ -86,7 +86,7 @@ def incremental_backup(backup_file, state, config):
     print(f"-> Exportando binlogs de {config['DB_NAME']} desde {state['File']}@{state['Position']}…")
     cmd = [
         MYSQLBINLOG_CMD,
-        "--skip-gtids",
+        "--skip-gtids",             # <— omite eventos GTID
         "-h", config['HOST'], "-P", str(config['PORT']),
         "-u", config['USER'], f"-p{config['PASSWORD']}",
         "--read-from-remote-server",
