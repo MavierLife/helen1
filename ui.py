@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 import threading
 import time
 import os
@@ -12,8 +14,8 @@ import main  # Importamos nuestro módulo principal
 class BackupUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Helen System - Backup Automático de MySQL")
-        self.root.geometry("900x700")
+        self.root.title("Myhelen Backup")
+        self.root.geometry("1000x800")
         
         # Variables para configuración de BD
         self.host_var = tk.StringVar(value=main.HOST)
@@ -37,9 +39,190 @@ class BackupUI:
         self.load_config()  # Cargar configuración guardada si existe
         
     def setup_ui(self):
-        # Frame principal con scrollbar
-        canvas = tk.Canvas(self.root)
-        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        # Configurar el estilo
+        style = ttk.Style()
+        
+        # Crear notebook para organizar en pestañas
+        notebook = ttk.Notebook(self.root, bootstyle="dark")
+        notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
+        
+        # ========== PESTAÑA PRINCIPAL ==========
+        main_tab = ttk.Frame(notebook)
+        notebook.add(main_tab, text="📊 Dashboard Principal")
+        
+        # Header con título y estado
+        self.create_header(main_tab)
+        
+        # Panel de control rápido
+        self.create_control_panel(main_tab)
+        
+        # Área de logs mejorada
+        self.create_logs_area(main_tab)
+        
+        # ========== PESTAÑA CONFIGURACIÓN ==========
+        config_tab = ttk.Frame(notebook)
+        notebook.add(config_tab, text="⚙️ Configuración")
+        
+        self.create_config_tab(config_tab)
+        
+        # ========== PESTAÑA ESTADÍSTICAS ==========
+        stats_tab = ttk.Frame(notebook)
+        notebook.add(stats_tab, text="📈 Estadísticas")
+        
+        self.create_stats_tab(stats_tab)
+        
+        # Log inicial
+        self.add_log("🚀 Sistema de backup inicializado", "SUCCESS")
+    
+    def create_header(self, parent):
+        """Crear header principal con título y estado"""
+        header_frame = ttk.Frame(parent)
+        header_frame.pack(fill=X, padx=20, pady=(20, 10))
+        
+        # Título principal
+        title_label = ttk.Label(
+            header_frame, 
+            text="🛡️ Helen System - Backup", 
+            font=("Segoe UI", 20, "bold"),
+            bootstyle="primary"
+        )
+        title_label.pack(side=LEFT)
+        
+        # Estado del sistema
+        self.status_frame = ttk.Frame(header_frame)
+        self.status_frame.pack(side=RIGHT)
+        
+        self.status_label = ttk.Label(
+            self.status_frame,
+            text="● Detenido",
+            font=("Segoe UI", 12, "bold"),
+            bootstyle="danger"
+        )
+        self.status_label.pack()
+        
+        # Separador
+        ttk.Separator(parent, orient=HORIZONTAL).pack(fill=X, padx=20, pady=10)
+    
+    def create_control_panel(self, parent):
+        """Crear panel de control principal"""
+        control_frame = ttk.LabelFrame(
+            parent, 
+            text="🎮 Panel de Control",
+            bootstyle="info",
+            padding=20
+        )
+        control_frame.pack(fill=X, padx=20, pady=(0, 10))
+        
+        # Fila 1: Configuración de intervalo
+        interval_frame = ttk.Frame(control_frame)
+        interval_frame.pack(fill=X, pady=(0, 15))
+        
+        ttk.Label(
+            interval_frame, 
+            text="⏰ Intervalo de backup:",
+            font=("Segoe UI", 11, "bold")
+        ).pack(side=LEFT)
+        
+        # Entrada de horas
+        ttk.Entry(
+            interval_frame, 
+            textvariable=self.interval_hours, 
+            width=5,
+            font=("Segoe UI", 10),
+            bootstyle="primary"
+        ).pack(side=LEFT, padx=(10, 5))
+        
+        ttk.Label(interval_frame, text="horas", font=("Segoe UI", 10)).pack(side=LEFT)
+        
+        # Entrada de minutos
+        ttk.Entry(
+            interval_frame, 
+            textvariable=self.interval_minutes, 
+            width=5,
+            font=("Segoe UI", 10),
+            bootstyle="primary"
+        ).pack(side=LEFT, padx=(10, 5))
+        
+        ttk.Label(interval_frame, text="minutos", font=("Segoe UI", 10)).pack(side=LEFT)
+        
+        # Fila 2: Botones principales
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill=X)
+        
+        self.start_button = ttk.Button(
+            button_frame, 
+            text="▶️ Iniciar Backup Automático",
+            command=self.start_automatic_backup,
+            bootstyle="success-outline",
+            width=25
+        )
+        self.start_button.pack(side=LEFT, padx=(0, 10))
+        
+        self.stop_button = ttk.Button(
+            button_frame, 
+            text="⏹️ Detener",
+            command=self.stop_automatic_backup,
+            bootstyle="danger-outline",
+            state=DISABLED,
+            width=15
+        )
+        self.stop_button.pack(side=LEFT, padx=5)
+        
+        self.manual_button = ttk.Button(
+            button_frame, 
+            text="🔧 Backup Manual",
+            command=self.manual_backup,
+            bootstyle="warning-outline",
+            width=20
+        )
+        self.manual_button.pack(side=LEFT, padx=5)
+        
+        # Botón de limpiar logs a la derecha
+        ttk.Button(
+            button_frame,
+            text="🗑️ Limpiar",
+            command=self.clear_logs,
+            bootstyle="secondary-outline",
+            width=12
+        ).pack(side=RIGHT)
+    
+    def create_logs_area(self, parent):
+        """Crear área de logs mejorada"""
+        logs_frame = ttk.LabelFrame(
+            parent,
+            text="📝 Registro de Actividad",
+            bootstyle="secondary",
+            padding=15
+        )
+        logs_frame.pack(fill=BOTH, expand=True, padx=20, pady=(0, 20))
+        
+        # Frame para el text widget con scrollbar personalizada
+        text_frame = ttk.Frame(logs_frame)
+        text_frame.pack(fill=BOTH, expand=True)
+        
+        self.log_text = scrolledtext.ScrolledText(
+            text_frame,
+            height=15,
+            state=DISABLED,
+            font=("Consolas", 10),
+            bg="#2b2b2b",
+            fg="#ffffff",
+            insertbackground="#ffffff",
+            selectbackground="#404040"
+        )
+        self.log_text.pack(fill=BOTH, expand=True)
+        
+        # Configurar tags para diferentes tipos de mensajes
+        self.log_text.tag_configure("SUCCESS", foreground="#4CAF50", font=("Consolas", 10, "bold"))
+        self.log_text.tag_configure("ERROR", foreground="#F44336", font=("Consolas", 10, "bold"))
+        self.log_text.tag_configure("WARNING", foreground="#FF9800", font=("Consolas", 10, "bold"))
+        self.log_text.tag_configure("INFO", foreground="#2196F3", font=("Consolas", 10, "bold"))
+    
+    def create_config_tab(self, parent):
+        """Crear pestaña de configuración"""
+        # Scroll frame para la configuración
+        canvas = tk.Canvas(parent)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         
         scrollable_frame.bind(
@@ -50,108 +233,208 @@ class BackupUI:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Título
-        title_label = ttk.Label(scrollable_frame, text="Helen System - Backup Automático de MySQL", 
-                               font=("Arial", 16, "bold"))
-        title_label.pack(pady=(10, 20))
-        
         # ========== CONFIGURACIÓN DE BASE DE DATOS ==========
-        config_frame = ttk.LabelFrame(scrollable_frame, text="Configuración de Base de Datos", padding=10)
-        config_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        db_frame = ttk.LabelFrame(
+            scrollable_frame, 
+            text="🗄️ Configuración de Base de Datos",
+            bootstyle="primary",
+            padding=20
+        )
+        db_frame.pack(fill=X, padx=20, pady=20)
         
-        # Host
-        host_frame = ttk.Frame(config_frame)
-        host_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(host_frame, text="Host:", width=15).pack(side=tk.LEFT)
-        ttk.Entry(host_frame, textvariable=self.host_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+        # Grid para organizar los campos
+        fields = [
+            ("🌐 Host:", self.host_var),
+            ("🔌 Puerto:", self.port_var),
+            ("👤 Usuario:", self.user_var),
+            ("🔒 Contraseña:", self.password_var),
+            ("💾 Base de Datos:", self.db_name_var)
+        ]
         
-        # Puerto
-        port_frame = ttk.Frame(config_frame)
-        port_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(port_frame, text="Puerto:", width=15).pack(side=tk.LEFT)
-        ttk.Entry(port_frame, textvariable=self.port_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+        for i, (label_text, var) in enumerate(fields):
+            row_frame = ttk.Frame(db_frame)
+            row_frame.pack(fill=X, pady=8)
+            
+            ttk.Label(
+                row_frame, 
+                text=label_text,
+                font=("Segoe UI", 10, "bold"),
+                width=18
+            ).pack(side=LEFT)
+            
+            if "Contraseña" in label_text:
+                entry = ttk.Entry(
+                    row_frame, 
+                    textvariable=var, 
+                    show="*",
+                    width=35,
+                    font=("Segoe UI", 10)
+                )
+            else:
+                entry = ttk.Entry(
+                    row_frame, 
+                    textvariable=var,
+                    width=35,
+                    font=("Segoe UI", 10)
+                )
+            entry.pack(side=LEFT, padx=(10, 0))
         
-        # Usuario
-        user_frame = ttk.Frame(config_frame)
-        user_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(user_frame, text="Usuario:", width=15).pack(side=tk.LEFT)
-        ttk.Entry(user_frame, textvariable=self.user_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+        # Directorio de backup con botón
+        dir_frame = ttk.Frame(db_frame)
+        dir_frame.pack(fill=X, pady=8)
         
-        # Contraseña
-        pass_frame = ttk.Frame(config_frame)
-        pass_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(pass_frame, text="Contraseña:", width=15).pack(side=tk.LEFT)
-        ttk.Entry(pass_frame, textvariable=self.password_var, show="*", width=30).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(
+            dir_frame,
+            text="📁 Dir. Backup:",
+            font=("Segoe UI", 10, "bold"),
+            width=18
+        ).pack(side=LEFT)
         
-        # Base de datos
-        db_frame = ttk.Frame(config_frame)
-        db_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(db_frame, text="Base de Datos:", width=15).pack(side=tk.LEFT)
-        ttk.Entry(db_frame, textvariable=self.db_name_var, width=30).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Entry(
+            dir_frame,
+            textvariable=self.backup_dir_var,
+            width=30,
+            font=("Segoe UI", 10)
+        ).pack(side=LEFT, padx=(10, 5))
         
-        # Directorio de backup
-        dir_frame = ttk.Frame(config_frame)
-        dir_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(dir_frame, text="Dir. Backup:", width=15).pack(side=tk.LEFT)
-        ttk.Entry(dir_frame, textvariable=self.backup_dir_var, width=25).pack(side=tk.LEFT, padx=(5, 0))
-        ttk.Button(dir_frame, text="...", width=3, command=self.browse_backup_dir).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Button(
+            dir_frame,
+            text="📂",
+            command=self.browse_backup_dir,
+            bootstyle="info-outline",
+            width=5
+        ).pack(side=LEFT)
         
         # Botones de configuración
-        config_btn_frame = ttk.Frame(config_frame)
-        config_btn_frame.pack(fill=tk.X, pady=(10, 0))
-        ttk.Button(config_btn_frame, text="Probar Conexión", command=self.test_connection).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(config_btn_frame, text="Guardar Config", command=self.save_config).pack(side=tk.LEFT, padx=5)
-        ttk.Button(config_btn_frame, text="Cargar Config", command=self.load_config).pack(side=tk.LEFT, padx=5)
+        config_btn_frame = ttk.Frame(db_frame)
+        config_btn_frame.pack(fill=X, pady=(20, 0))
         
-        # ========== CONFIGURACIÓN DE INTERVALO ==========
-        interval_frame = ttk.LabelFrame(scrollable_frame, text="Configuración de Backup Automático", padding=10)
-        interval_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        ttk.Button(
+            config_btn_frame,
+            text="🔍 Probar Conexión",
+            command=self.test_connection,
+            bootstyle="info",
+            width=20
+        ).pack(side=LEFT, padx=(0, 10))
         
-        ttk.Label(interval_frame, text="Intervalo de backup:").pack(side=tk.LEFT)
-        ttk.Entry(interval_frame, textvariable=self.interval_hours, width=5).pack(side=tk.LEFT, padx=(10, 5))
-        ttk.Label(interval_frame, text="horas").pack(side=tk.LEFT)
-        ttk.Entry(interval_frame, textvariable=self.interval_minutes, width=5).pack(side=tk.LEFT, padx=(10, 5))
-        ttk.Label(interval_frame, text="minutos").pack(side=tk.LEFT)
+        ttk.Button(
+            config_btn_frame,
+            text="💾 Guardar Config",
+            command=self.save_config,
+            bootstyle="success",
+            width=20
+        ).pack(side=LEFT, padx=5)
         
-        # ========== ÁREA DE LOGS ==========
-        log_frame = ttk.LabelFrame(scrollable_frame, text="Logs del Sistema", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        ttk.Button(
+            config_btn_frame,
+            text="📂 Cargar Config",
+            command=self.load_config,
+            bootstyle="warning",
+            width=20
+        ).pack(side=LEFT, padx=5)
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=15, state=tk.DISABLED)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        # ========== BOTONES DE CONTROL ==========
-        button_frame = ttk.Frame(scrollable_frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        self.start_button = ttk.Button(button_frame, text="Iniciar Backup Automático", 
-                                      command=self.start_automatic_backup)
-        self.start_button.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.stop_button = ttk.Button(button_frame, text="Detener", 
-                                     command=self.stop_automatic_backup, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
-        
-        self.manual_button = ttk.Button(button_frame, text="Backup Manual", 
-                                       command=self.manual_backup)
-        self.manual_button.pack(side=tk.LEFT, padx=5)
-        
-        self.clear_button = ttk.Button(button_frame, text="Limpiar Logs", 
-                                      command=self.clear_logs)
-        self.clear_button.pack(side=tk.LEFT, padx=5)
-        
-        # Configurar canvas y scrollbar
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+    
+    def create_stats_tab(self, parent):
+        """Crear pestaña de estadísticas"""
+        stats_frame = ttk.Frame(parent)
+        stats_frame.pack(fill=BOTH, expand=True, padx=20, pady=20)
         
-        # Log inicial
-        self.add_log("Sistema de backup inicializado")
+        # Cards de estadísticas
+        cards_frame = ttk.Frame(stats_frame)
+        cards_frame.pack(fill=X, pady=(0, 20))
+        
+        # Card 1: Último backup
+        self.create_stat_card(
+            cards_frame,
+            "🕐 Último Backup",
+            "No disponible",
+            "primary"
+        ).pack(side=LEFT, fill=X, expand=True, padx=(0, 10))
+        
+        # Card 2: Total de backups
+        self.create_stat_card(
+            cards_frame,
+            "📊 Total Backups",
+            "0",
+            "success"
+        ).pack(side=LEFT, fill=X, expand=True, padx=5)
+        
+        # Card 3: Estado del sistema
+        self.create_stat_card(
+            cards_frame,
+            "⚡ Estado",
+            "Detenido",
+            "danger"
+        ).pack(side=LEFT, fill=X, expand=True, padx=(10, 0))
+        
+        # Área de información adicional
+        info_frame = ttk.LabelFrame(
+            stats_frame,
+            text="ℹ️ Información del Sistema",
+            bootstyle="info",
+            padding=20
+        )
+        info_frame.pack(fill=BOTH, expand=True)
+        
+        # Información del sistema
+        info_text = f"""
+🖥️ Sistema Operativo: {os.name}
+📂 Directorio Actual: {os.getcwd()}
+🐍 Versión Python: {sys.version.split()[0]}
+⏰ Fecha/Hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        """
+        
+        ttk.Label(
+            info_frame,
+            text=info_text.strip(),
+            font=("Segoe UI", 10),
+            justify=LEFT
+        ).pack(anchor=W)
+    
+    def create_stat_card(self, parent, title, value, bootstyle):
+        """Crear una card de estadística"""
+        card = ttk.LabelFrame(
+            parent,
+            text=title,
+            bootstyle=bootstyle,
+            padding=15
+        )
+        
+        value_label = ttk.Label(
+            card,
+            text=value,
+            font=("Segoe UI", 16, "bold"),
+            bootstyle=bootstyle
+        )
+        value_label.pack()
+        
+        return card
+    
+    def update_status(self, status, message):
+        """Actualizar el estado visual del sistema"""
+        if status == "running":
+            self.status_label.config(
+                text="● Ejecutando",
+                bootstyle="success"
+            )
+        elif status == "stopped":
+            self.status_label.config(
+                text="● Detenido",
+                bootstyle="danger"
+            )
+        elif status == "working":
+            self.status_label.config(
+                text="● Trabajando...",
+                bootstyle="warning"
+            )
     
     def browse_backup_dir(self):
         directory = filedialog.askdirectory(initialdir=self.backup_dir_var.get())
         if directory:
             self.backup_dir_var.set(directory)
-            self.add_log(f"Carpeta de destino cambiada a: {directory}")
+            self.add_log(f"📁 Carpeta de destino cambiada a: {directory}", "INFO")
     
     def get_db_config(self):
         """Obtener la configuración actual de la base de datos"""
@@ -191,21 +474,21 @@ class BackupUI:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
                 
                 if result.returncode == 0:
-                    self.log_queue.put("✓ Conexión exitosa a la base de datos")
+                    self.log_queue.put(("✅ Conexión exitosa a la base de datos", "SUCCESS"))
                     messagebox.showinfo("Éxito", "¡Conexión exitosa a la base de datos!")
                 else:
                     error_msg = result.stderr.strip() if result.stderr else "Error desconocido"
-                    self.log_queue.put(f"✗ Error de conexión: {error_msg}")
+                    self.log_queue.put((f"❌ Error de conexión: {error_msg}", "ERROR"))
                     messagebox.showerror("Error", f"Error de conexión:\n{error_msg}")
                     
             except subprocess.TimeoutExpired:
-                self.log_queue.put("✗ Timeout en la conexión")
+                self.log_queue.put(("⏰ Timeout en la conexión", "ERROR"))
                 messagebox.showerror("Error", "Timeout: La conexión tardó demasiado")
             except Exception as e:
-                self.log_queue.put(f"✗ Error al probar conexión: {str(e)}")
+                self.log_queue.put((f"❌ Error al probar conexión: {str(e)}", "ERROR"))
                 messagebox.showerror("Error", f"Error al probar conexión:\n{str(e)}")
         
-        self.add_log("Probando conexión a la base de datos...")
+        self.add_log("🔍 Probando conexión a la base de datos...", "INFO")
         threading.Thread(target=test_in_thread, daemon=True).start()
     
     def save_config(self):
@@ -217,10 +500,10 @@ class BackupUI:
         try:
             with open("backup_config.json", "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
-            self.add_log("✓ Configuración guardada en backup_config.json")
+            self.add_log("💾 Configuración guardada en backup_config.json", "SUCCESS")
             messagebox.showinfo("Éxito", "Configuración guardada correctamente")
         except Exception as e:
-            self.add_log(f"✗ Error al guardar configuración: {str(e)}")
+            self.add_log(f"❌ Error al guardar configuración: {str(e)}", "ERROR")
             messagebox.showerror("Error", f"Error al guardar configuración:\n{str(e)}")
     
     def load_config(self):
@@ -239,16 +522,27 @@ class BackupUI:
                 self.interval_hours.set(config.get('interval_hours', '24'))
                 self.interval_minutes.set(config.get('interval_minutes', '0'))
                 
-                self.add_log("✓ Configuración cargada desde backup_config.json")
+                self.add_log("📂 Configuración cargada desde backup_config.json", "SUCCESS")
         except Exception as e:
-            self.add_log(f"✗ Error al cargar configuración: {str(e)}")
+            self.add_log(f"❌ Error al cargar configuración: {str(e)}", "ERROR")
     
-    def add_log(self, message):
+    def add_log(self, message, log_type="INFO"):
+        """Agregar mensaje al log con tipo específico"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_entry = f"[{timestamp}] {message}\n"
+        
+        # Iconos según el tipo
+        icons = {
+            "SUCCESS": "✅",
+            "ERROR": "❌", 
+            "WARNING": "⚠️",
+            "INFO": "ℹ️"
+        }
+        
+        icon = icons.get(log_type, "ℹ️")
+        log_entry = f"[{timestamp}] {icon} {message}\n"
         
         self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, log_entry)
+        self.log_text.insert(tk.END, log_entry, log_type)
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
         
@@ -259,13 +553,17 @@ class BackupUI:
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state=tk.DISABLED)
-        self.add_log("Logs limpiados")
+        self.add_log("🗑️ Logs limpiados", "INFO")
     
     def check_log_queue(self):
         try:
             while True:
-                message = self.log_queue.get_nowait()
-                self.add_log(message)
+                item = self.log_queue.get_nowait()
+                if isinstance(item, tuple):
+                    message, log_type = item
+                    self.add_log(message, log_type)
+                else:
+                    self.add_log(item)
         except queue.Empty:
             pass
         finally:
@@ -302,12 +600,14 @@ class BackupUI:
                 return
         
         self.is_running = True
-        self.start_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.NORMAL)
-        self.manual_button.config(state=tk.DISABLED)
+        self.start_button.config(state=DISABLED)
+        self.stop_button.config(state=NORMAL)
+        self.manual_button.config(state=DISABLED)
+        
+        self.update_status("running", "Sistema en ejecución")
         
         interval_seconds = (hours * 3600) + (minutes * 60)
-        self.add_log(f"Iniciando backup automático cada {hours}h {minutes}m")
+        self.add_log(f"🚀 Iniciando backup automático cada {hours}h {minutes}m", "SUCCESS")
         
         # Iniciar hilo de backup
         self.backup_thread = threading.Thread(target=self.backup_worker, args=(interval_seconds,))
@@ -316,10 +616,12 @@ class BackupUI:
     
     def stop_automatic_backup(self):
         self.is_running = False
-        self.start_button.config(state=tk.NORMAL)
-        self.stop_button.config(state=tk.DISABLED)
-        self.manual_button.config(state=tk.NORMAL)
-        self.add_log("Deteniendo backup automático...")
+        self.start_button.config(state=NORMAL)
+        self.stop_button.config(state=DISABLED)
+        self.manual_button.config(state=NORMAL)
+        
+        self.update_status("stopped", "Sistema detenido")
+        self.add_log("⏹️ Deteniendo backup automático...", "WARNING")
     
     def manual_backup(self):
         config = self.get_db_config()
@@ -327,12 +629,13 @@ class BackupUI:
             messagebox.showerror("Error", "Por favor complete todos los campos obligatorios")
             return
         
-        self.add_log("Iniciando backup manual...")
+        self.add_log("🔧 Iniciando backup manual...", "INFO")
+        self.update_status("working", "Ejecutando backup")
         threading.Thread(target=self.perform_backup, daemon=True).start()
     
     def backup_worker(self, interval_seconds):
         # Realizar primer backup inmediatamente
-        self.log_queue.put("Ejecutando primer backup...")
+        self.log_queue.put(("🚀 Ejecutando primer backup...", "INFO"))
         self.perform_backup()
         
         while self.is_running:
@@ -343,10 +646,10 @@ class BackupUI:
                 time.sleep(1)
             
             if self.is_running:
-                self.log_queue.put("Ejecutando backup programado...")
+                self.log_queue.put(("⏰ Ejecutando backup programado...", "INFO"))
                 self.perform_backup()
         
-        self.log_queue.put("Backup automático detenido")
+        self.log_queue.put(("⏹️ Backup automático detenido", "WARNING"))
     
     def perform_backup(self):
         try:
@@ -362,7 +665,7 @@ class BackupUI:
                 
                 def write(self, text):
                     if text.strip():
-                        self.queue.put(text.strip())
+                        self.queue.put((text.strip(), "INFO"))
                 
                 def flush(self):
                     pass
@@ -374,19 +677,30 @@ class BackupUI:
             try:
                 # Ejecutar el backup con la configuración actual
                 main.main(config)
-                self.log_queue.put("✓ Backup completado exitosamente")
+                self.log_queue.put(("✅ Backup completado exitosamente", "SUCCESS"))
             except Exception as e:
-                self.log_queue.put(f"✗ Error durante el backup: {str(e)}")
+                self.log_queue.put((f"❌ Error durante el backup: {str(e)}", "ERROR"))
             finally:
                 # Restaurar stdout y stderr
                 sys.stdout = original_stdout
                 sys.stderr = original_stderr
                 
+                # Actualizar estado si no está en modo automático
+                if not self.is_running:
+                    self.update_status("stopped", "Backup manual completado")
+                
         except Exception as e:
-            self.log_queue.put(f"✗ Error crítico: {str(e)}")
+            self.log_queue.put((f"🔥 Error crítico: {str(e)}", "ERROR"))
 
 def run_ui():
-    root = tk.Tk()
+    # Crear la aplicación con tema moderno
+    root = ttk.Window(
+        title="Myhelen Backup",
+        themename="superhero",  # Tema oscuro moderno
+        size=(1000, 800),
+        resizable=(True, True)
+    )
+    
     app = BackupUI(root)
     
     # Manejar el cierre de la ventana
