@@ -11,6 +11,7 @@ import queue
 import json
 import main  # Importamos nuestro módulo principal
 from process import create_nightly_processor  # Importar función del procesador nocturno
+from notification import TelegramNotifier   # ← IMPORT
 
 class BackupUI:
     def __init__(self, root):
@@ -49,7 +50,18 @@ class BackupUI:
         
         self.setup_ui()
         self.check_log_queue()
-        self.load_config()  # Cargar configuración guardada si existe
+        self.load_config()                       # ← ya carga la config
+
+        # ——— Notificar SISTEMA INICIADO ———
+        notifier = TelegramNotifier()
+        notifier.notify_system_start(self.get_db_config())
+        # ——————————————————————————————
+
+        # Si quedó habilitado el procesador nocturno
+        if self.enable_nightly_processor_var.get():
+            split_time = f"{self.split_time_hour_var.get()}:{self.split_time_minute_var.get()}"
+            self.add_log(f"🌙 Procesador nocturno habilitado y programado para las {split_time}", "SUCCESS")
+            self.start_nightly_processor()
     
     def setup_ui(self):
         # Configurar el estilo
@@ -711,18 +723,19 @@ class BackupUI:
     
     def add_log(self, message, log_type="INFO"):
         """Agregar mensaje al log con tipo específico"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Iconos según el tipo
-        icons = {
-            "SUCCESS": "✅",
-            "ERROR": "❌", 
-            "WARNING": "⚠️",
-            "INFO": "ℹ️"
-        }
-        
-        icon = icons.get(log_type, "ℹ️")
-        log_entry = f"[{timestamp}] {icon} {message}\n"
+        # Si el mensaje ya contiene timestamp (ej. "[2025-06-28"), usarlo tal cual
+        if message.startswith("[") and "]" in message:
+            log_entry = f"{message}\n"
+        else:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            icons = {
+                "SUCCESS": "✅",
+                "ERROR":   "❌", 
+                "WARNING": "⚠️",
+                "INFO":    "ℹ️"
+            }
+            icon = icons.get(log_type, "ℹ️")
+            log_entry = f"[{timestamp}] {icon} {message}\n"
         
         self.log_text.config(state=tk.NORMAL)
         self.log_text.insert(tk.END, log_entry, log_type)

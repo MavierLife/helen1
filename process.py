@@ -7,6 +7,7 @@ import shutil
 import json
 import subprocess
 from pathlib import Path
+from notification import TelegramNotifier  # ← IMPORT
 
 class NightlyProcessor:
     def __init__(self, config):
@@ -69,14 +70,16 @@ class NightlyProcessor:
         
         self.is_running = True
         
-        # Programar la tarea de división a la hora especificada
+        # Notificar inicio del procesador nocturno
+        notifier = TelegramNotifier()  # ← INSTANCIA LOCAL
+        notifier.notify_nightly_start(self.split_time, self.max_file_size_gb)  # ← NUEVA LÍNEA
+
+        # Programar y arrancar scheduler
         schedule.clear()
         schedule.every().day.at(self.split_time).do(self._nightly_process)
-        
-        # Iniciar hilo del programador
         self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
         self.scheduler_thread.start()
-        
+
         print(f"🚀 Procesador nocturno iniciado. División programada para las {self.split_time}")
     
     def stop_nightly_processor(self):
@@ -235,52 +238,43 @@ class NightlyProcessor:
     def _split_backup_file(self, source_file, target_folder):
         """Dividir el archivo de backup en partes más pequeñas"""
         try:
-            file_size = os.path.getsize(source_file)
-            max_size_bytes = self.max_file_size_gb * 1024 * 1024 * 1024  # GB a bytes
-            
-            print(f"📄 Archivo origen: {os.path.basename(source_file)}")
-            print(f"📏 Tamaño: {file_size / (1024**3):.2f} GB")
-            
-            if file_size <= max_size_bytes:
-                # Si el archivo es menor al tamaño máximo, solo copiarlo
-                target_file = os.path.join(target_folder, "backup_part_001.sql")
-                shutil.copy2(source_file, target_file)
-                print(f"📄 Archivo copiado (sin división): {os.path.basename(target_file)}")
-                return [target_file]
-            
-            print(f"✂️ Dividiendo en partes de {self.max_file_size_gb} GB máximo...")
-            
+            max_size_bytes = int(self.max_file_size_gb * 1024**3)
             split_files = []
             part_num = 1
-            
-            with open(source_file, 'rb') as source:
-                while True:
-                    part_filename = os.path.join(target_folder, f"backup_part_{part_num:03d}.sql")
-                    
-                    with open(part_filename, 'wb') as part_file:
-                        bytes_written = 0
-                        
-                        while bytes_written < max_size_bytes:
-                            chunk_size = min(1024 * 1024, max_size_bytes - bytes_written)  # 1MB chunks
-                            chunk = source.read(chunk_size)
-                            
-                            if not chunk:
-                                break
-                            
-                            part_file.write(chunk)
-                            bytes_written += len(chunk)
-                    
-                    if bytes_written > 0:
-                        split_files.append(part_filename)
-                        size_mb = bytes_written / (1024**2)
-                        print(f"📄 Parte {part_num:03d}: {os.path.basename(part_filename)} ({size_mb:.1f} MB)")
+            current_size = 0
+            buffer_lines = []
+
+            with open(source_file, 'r', encoding='utf-8') as src:
+                for line in src:
+                    buffer_lines.append(line)
+                    current_size += len(line.encode('utf-8'))
+
+                    # Si superamos el umbral Y la línea acaba en ‘;’ -> cerrar parte
+                    if current_size >= max_size_bytes and line.strip().endswith(';'):
+                        part_path = os.path.join(
+                            target_folder,
+                            f"backup_part_{part_num:03d}.sql"
+                        )
+                        with open(part_path, 'w', encoding='utf-8') as part:
+                            part.writelines(buffer_lines)
+                        split_files.append(part_path)
+
                         part_num += 1
-                    
-                    if bytes_written < max_size_bytes:
-                        break
-            
+                        buffer_lines = []
+                        current_size = 0
+
+            # Volcar resto si queda contenido
+            if buffer_lines:
+                part_path = os.path.join(
+                    target_folder,
+                    f"backup_part_{part_num:03d}.sql"
+                )
+                with open(part_path, 'w', encoding='utf-8') as part:
+                    part.writelines(buffer_lines)
+                split_files.append(part_path)
+
             return split_files
-            
+
         except Exception as e:
             print(f"❌ Error al dividir archivo: {e}")
             return []

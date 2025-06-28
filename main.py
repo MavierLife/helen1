@@ -3,6 +3,7 @@ import os
 import json
 import subprocess
 import sys
+from notification import TelegramNotifier  # ← IMPORT, si no existe
 
 # —————— CONFIGURACIÓN ——————
 HOST               = 'localhost'            # ← host de tu servidor MySQL
@@ -13,6 +14,9 @@ DB_NAME            = 'helensystem_data'     # ← la BD que quieres copiar
 BACKUP_DIR         = r'C:\ruta\de\backup'
 BACKUP_FILE_NAME   = 'backup.sql'
 STATE_FILE_NAME    = 'backup.state.json'
+
+# Instancia global del notifier
+notifier = TelegramNotifier()
 
 # Detectar automáticamente la ruta de herramientas MySQL
 def get_mysql_bin_dir():
@@ -108,17 +112,18 @@ def save_state(path, file_, pos):
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"File": file_, "Position": pos}, f)
 
-def main(config=None):
-    # Usar configuración pasada como parámetro o valores por defecto
-    if config is None:
-        config = {
-            'HOST': HOST,
-            'PORT': PORT,
-            'USER': USER,
-            'PASSWORD': PASSWORD,
-            'DB_NAME': DB_NAME,
-            'BACKUP_DIR': BACKUP_DIR
-        }
+def main():
+    # Construir diccionario de configuración
+    config = {
+        'HOST': HOST,
+        'PORT': PORT,
+        'USER': USER,
+        'PASSWORD': PASSWORD,
+        'DB_NAME': DB_NAME,
+        'BACKUP_DIR': BACKUP_DIR,
+        'BACKUP_FILE_NAME': BACKUP_FILE_NAME,
+        'STATE_FILE_NAME': STATE_FILE_NAME
+    }
     
     os.makedirs(config['BACKUP_DIR'], exist_ok=True)
     backup_file = os.path.join(config['BACKUP_DIR'], BACKUP_FILE_NAME)
@@ -148,4 +153,8 @@ def main(config=None):
         print(f"Estado actualizado a: {file_}@{pos}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # 2) Aviso de error en backup
+        notifier.notify_backup_error(str(e))  # ← NUEVA LÍNEA
