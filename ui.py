@@ -10,12 +10,13 @@ from datetime import datetime
 import queue
 import json
 import main  # Importamos nuestro módulo principal
+from process import create_nightly_processor  # Importar función del procesador nocturno
 
 class BackupUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Myhelen Backup")
-        self.root.geometry("1000x800")
+        self.root.geometry("1200x900")  # Aumentar tamaño para nuevos controles
         
         # Variables para configuración de BD
         self.host_var = tk.StringVar(value=main.HOST)
@@ -26,10 +27,22 @@ class BackupUI:
         self.backup_dir_var = tk.StringVar(value=main.BACKUP_DIR)
         
         # Variables para interfaz
-        self.interval_hours = tk.StringVar(value="24")
+        self.interval_hours = tk.StringVar(value="1")  # Cambiar a 1 hora por defecto
         self.interval_minutes = tk.StringVar(value="0")
+        
+        # === NUEVAS VARIABLES PARA PROCESADOR NOCTURNO ===
+        self.daily_backup_dir_var = tk.StringVar(value=os.path.join(main.BACKUP_DIR, 'daily_backups'))
+        self.max_file_size_gb_var = tk.StringVar(value="1")
+        self.split_time_hour_var = tk.StringVar(value="00")
+        self.split_time_minute_var = tk.StringVar(value="00")
+        self.enable_nightly_processor_var = tk.BooleanVar(value=True)
+        
         self.is_running = False
         self.backup_thread = None
+        self.backup_in_progress = False  # Añadir esta variable
+        
+        # Procesador nocturno
+        self.nightly_processor = None
         
         # Cola para mensajes entre hilos
         self.log_queue = queue.Queue()
@@ -37,7 +50,7 @@ class BackupUI:
         self.setup_ui()
         self.check_log_queue()
         self.load_config()  # Cargar configuración guardada si existe
-        
+    
     def setup_ui(self):
         # Configurar el estilo
         style = ttk.Style()
@@ -279,13 +292,13 @@ class BackupUI:
                 )
             entry.pack(side=LEFT, padx=(10, 0))
         
-        # Directorio de backup con botón
+        # Directorio de backup temporal con botón
         dir_frame = ttk.Frame(db_frame)
         dir_frame.pack(fill=X, pady=8)
         
         ttk.Label(
             dir_frame,
-            text="📁 Dir. Backup:",
+            text="📁 Dir. Temporal:",
             font=("Segoe UI", 10, "bold"),
             width=18
         ).pack(side=LEFT)
@@ -305,9 +318,156 @@ class BackupUI:
             width=5
         ).pack(side=LEFT)
         
-        # Botones de configuración
-        config_btn_frame = ttk.Frame(db_frame)
-        config_btn_frame.pack(fill=X, pady=(20, 0))
+        # ========== CONFIGURACIÓN DEL PROCESADOR NOCTURNO ==========
+        nightly_frame = ttk.LabelFrame(
+            scrollable_frame, 
+            text="🌙 Configuración del Procesador Nocturno",
+            bootstyle="warning",
+            padding=20
+        )
+        nightly_frame.pack(fill=X, padx=20, pady=20)
+        
+        # Checkbox para habilitar/deshabilitar
+        enable_frame = ttk.Frame(nightly_frame)
+        enable_frame.pack(fill=X, pady=(0, 15))
+        
+        ttk.Checkbutton(
+            enable_frame,
+            text="🌙 Habilitar Procesador Nocturno",
+            variable=self.enable_nightly_processor_var,
+            bootstyle="warning-round-toggle",
+            command=self.toggle_nightly_processor
+        ).pack(side=LEFT)
+        
+        ttk.Label(
+            enable_frame,
+            text="(Divide y organiza backups automáticamente)",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        ).pack(side=LEFT, padx=(10, 0))
+        
+        # Directorio de backups diarios
+        daily_dir_frame = ttk.Frame(nightly_frame)
+        daily_dir_frame.pack(fill=X, pady=8)
+        
+        ttk.Label(
+            daily_dir_frame,
+            text="📂 Dir. Backups Diarios:",
+            font=("Segoe UI", 10, "bold"),
+            width=20
+        ).pack(side=LEFT)
+        
+        ttk.Entry(
+            daily_dir_frame,
+            textvariable=self.daily_backup_dir_var,
+            width=28,
+            font=("Segoe UI", 10)
+        ).pack(side=LEFT, padx=(10, 5))
+        
+        ttk.Button(
+            daily_dir_frame,
+            text="📂",
+            command=self.browse_daily_backup_dir,
+            bootstyle="warning-outline",
+            width=5
+        ).pack(side=LEFT)
+        
+        # Tamaño máximo por archivo
+        size_frame = ttk.Frame(nightly_frame)
+        size_frame.pack(fill=X, pady=8)
+        
+        ttk.Label(
+            size_frame,
+            text="📦 Tamaño máx. por archivo:",
+            font=("Segoe UI", 10, "bold"),
+            width=20
+        ).pack(side=LEFT)
+        
+        ttk.Entry(
+            size_frame,
+            textvariable=self.max_file_size_gb_var,
+            width=8,
+            font=("Segoe UI", 10)
+        ).pack(side=LEFT, padx=(10, 5))
+        
+        ttk.Label(
+            size_frame,
+            text="GB",
+            font=("Segoe UI", 10)
+        ).pack(side=LEFT)
+        
+        ttk.Label(
+            size_frame,
+            text="(ej: 1 = archivos de máximo 1GB)",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        ).pack(side=LEFT, padx=(10, 0))
+        
+        # Hora de corte
+        time_frame = ttk.Frame(nightly_frame)
+        time_frame.pack(fill=X, pady=8)
+        
+        ttk.Label(
+            time_frame,
+            text="⏰ Hora de corte:",
+            font=("Segoe UI", 10, "bold"),
+            width=20
+        ).pack(side=LEFT)
+        
+        ttk.Entry(
+            time_frame,
+            textvariable=self.split_time_hour_var,
+            width=4,
+            font=("Segoe UI", 10)
+        ).pack(side=LEFT, padx=(10, 2))
+        
+        ttk.Label(time_frame, text=":", font=("Segoe UI", 10)).pack(side=LEFT)
+        
+        ttk.Entry(
+            time_frame,
+            textvariable=self.split_time_minute_var,
+            width=4,
+            font=("Segoe UI", 10)
+        ).pack(side=LEFT, padx=(2, 10))
+        
+        ttk.Label(
+            time_frame,
+            text="(HH:MM - Hora diaria para procesar backups)",
+            font=("Segoe UI", 9),
+            foreground="gray"
+        ).pack(side=LEFT)
+        
+        # Botones del procesador nocturno
+        nightly_btn_frame = ttk.Frame(nightly_frame)
+        nightly_btn_frame.pack(fill=X, pady=(15, 0))
+        
+        ttk.Button(
+            nightly_btn_frame,
+            text="🚀 Iniciar Procesador",
+            command=self.start_nightly_processor,
+            bootstyle="warning",
+            width=18
+        ).pack(side=LEFT, padx=(0, 10))
+        
+        ttk.Button(
+            nightly_btn_frame,
+            text="⏹️ Detener Procesador",
+            command=self.stop_nightly_processor,
+            bootstyle="danger",
+            width=18
+        ).pack(side=LEFT, padx=5)
+        
+        ttk.Button(
+            nightly_btn_frame,
+            text="🔧 Forzar Proceso",
+            command=self.force_nightly_process,
+            bootstyle="secondary",
+            width=16
+        ).pack(side=LEFT, padx=5)
+        
+        # Botones de configuración general
+        config_btn_frame = ttk.Frame(scrollable_frame)
+        config_btn_frame.pack(fill=X, padx=20, pady=(20, 0))
         
         ttk.Button(
             config_btn_frame,
@@ -436,6 +596,13 @@ class BackupUI:
             self.backup_dir_var.set(directory)
             self.add_log(f"📁 Carpeta de destino cambiada a: {directory}", "INFO")
     
+    def browse_daily_backup_dir(self):
+        """Explorar y seleccionar directorio para backups diarios"""
+        directory = filedialog.askdirectory(initialdir=self.daily_backup_dir_var.get())
+        if directory:
+            self.daily_backup_dir_var.set(directory)
+            self.add_log(f"📂 Directorio de backups diarios cambiado a: {directory}", "INFO")
+
     def get_db_config(self):
         """Obtener la configuración actual de la base de datos"""
         return {
@@ -497,6 +664,13 @@ class BackupUI:
         config['interval_hours'] = self.interval_hours.get()
         config['interval_minutes'] = self.interval_minutes.get()
         
+        # Añadir configuración del procesador nocturno
+        config['enable_nightly_processor'] = self.enable_nightly_processor_var.get()
+        config['daily_backup_dir'] = self.daily_backup_dir_var.get()
+        config['max_file_size_gb'] = self.max_file_size_gb_var.get()
+        config['split_time_hour'] = self.split_time_hour_var.get()
+        config['split_time_minute'] = self.split_time_minute_var.get()
+        
         try:
             with open("backup_config.json", "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2)
@@ -513,14 +687,23 @@ class BackupUI:
                 with open("backup_config.json", "r", encoding="utf-8") as f:
                     config = json.load(f)
                 
+                # Configuración básica
                 self.host_var.set(config.get('HOST', 'localhost'))
                 self.port_var.set(str(config.get('PORT', 3306)))
                 self.user_var.set(config.get('USER', 'root'))
                 self.password_var.set(config.get('PASSWORD', ''))
                 self.db_name_var.set(config.get('DB_NAME', 'helensystem_data'))
                 self.backup_dir_var.set(config.get('BACKUP_DIR', r'C:\ruta\de\backup'))
-                self.interval_hours.set(config.get('interval_hours', '24'))
+                self.interval_hours.set(config.get('interval_hours', '1'))
                 self.interval_minutes.set(config.get('interval_minutes', '0'))
+                
+                # Configuración del procesador nocturno
+                self.enable_nightly_processor_var.set(config.get('enable_nightly_processor', True))
+                self.daily_backup_dir_var.set(config.get('daily_backup_dir', 
+                                                       os.path.join(self.backup_dir_var.get(), 'daily_backups')))
+                self.max_file_size_gb_var.set(config.get('max_file_size_gb', '1'))
+                self.split_time_hour_var.set(config.get('split_time_hour', '00'))
+                self.split_time_minute_var.set(config.get('split_time_minute', '00'))
                 
                 self.add_log("📂 Configuración cargada desde backup_config.json", "SUCCESS")
         except Exception as e:
@@ -653,6 +836,7 @@ class BackupUI:
     
     def perform_backup(self):
         try:
+            self.backup_in_progress = True  # Marcar que el backup está en progreso
             config = self.get_db_config()
             
             # Redirigir la salida para capturar los mensajes del módulo principal
@@ -691,6 +875,120 @@ class BackupUI:
                 
         except Exception as e:
             self.log_queue.put((f"🔥 Error crítico: {str(e)}", "ERROR"))
+        finally:
+            self.backup_in_progress = False  # Marcar que el backup terminó
+    
+    def setup_nightly_processor(self):
+        processor_config = self.get_db_config()
+        processor_config.update({
+            'MAX_FILE_SIZE_GB': 1,  # Configurable desde UI
+            'SPLIT_TIME': "00:00"   # Configurable desde UI
+        })
+        
+        self.nightly_processor = create_nightly_processor(processor_config)
+        self.nightly_processor.set_main_controller(self)
+        self.nightly_processor.start_nightly_processor()
+    
+    def toggle_nightly_processor(self):
+        """Habilitar/deshabilitar procesador nocturno"""
+        if self.enable_nightly_processor_var.get():
+            self.add_log("🌙 Procesador nocturno habilitado", "INFO")
+        else:
+            self.add_log("🌙 Procesador nocturno deshabilitado", "WARNING")
+            if self.nightly_processor:
+                self.stop_nightly_processor()
+    
+    def validate_nightly_config(self):
+        """Validar configuración del procesador nocturno"""
+        try:
+            # Validar tamaño de archivo
+            max_size = float(self.max_file_size_gb_var.get())
+            if max_size <= 0:
+                raise ValueError("El tamaño debe ser mayor a 0")
+            
+            # Validar hora
+            hour = int(self.split_time_hour_var.get())
+            minute = int(self.split_time_minute_var.get())
+            if not (0 <= hour <= 23) or not (0 <= minute <= 59):
+                raise ValueError("Hora inválida")
+            
+            # Validar directorios
+            if not self.daily_backup_dir_var.get().strip():
+                raise ValueError("Directorio de backups diarios es requerido")
+            
+            return True, max_size, f"{hour:02d}:{minute:02d}"
+            
+        except ValueError as e:
+            messagebox.showerror("Error de configuración", f"Error en configuración nocturna:\n{str(e)}")
+            return False, None, None
+    
+    def start_nightly_processor(self):
+        """Iniciar el procesador nocturno"""
+        if not self.enable_nightly_processor_var.get():
+            messagebox.showwarning("Advertencia", "El procesador nocturno no está habilitado")
+            return
+        
+        valid, max_size, split_time = self.validate_nightly_config()
+        if not valid:
+            return
+        
+        try:
+            # Crear directorio si no existe
+            daily_dir = self.daily_backup_dir_var.get()
+            os.makedirs(daily_dir, exist_ok=True)
+            
+            # Configurar procesador nocturno
+            processor_config = self.get_db_config()
+            processor_config.update({
+                'DAILY_BACKUP_DIR': daily_dir,
+                'MAX_FILE_SIZE_GB': max_size,
+                'SPLIT_TIME': split_time
+            })
+            
+            # Crear y configurar procesador
+            self.nightly_processor = create_nightly_processor(processor_config)
+            self.nightly_processor.set_main_controller(self)
+            self.nightly_processor.start_nightly_processor()
+            
+            self.add_log(f"🌙 Procesador nocturno iniciado - Corte: {split_time}, Tamaño máx: {max_size}GB", "SUCCESS")
+            
+        except Exception as e:
+            self.add_log(f"❌ Error al iniciar procesador nocturno: {str(e)}", "ERROR")
+            messagebox.showerror("Error", f"Error al iniciar procesador nocturno:\n{str(e)}")
+    
+    def stop_nightly_processor(self):
+        """Detener el procesador nocturno"""
+        if self.nightly_processor:
+            try:
+                self.nightly_processor.stop_nightly_processor()
+                self.nightly_processor = None
+                self.add_log("🛑 Procesador nocturno detenido", "WARNING")
+            except Exception as e:
+                self.add_log(f"❌ Error al detener procesador nocturno: {str(e)}", "ERROR")
+        else:
+            self.add_log("⚠️ No hay procesador nocturno activo", "WARNING")
+    
+    def force_nightly_process(self):
+        """Forzar el proceso nocturno manualmente"""
+        if not self.nightly_processor:
+            messagebox.showwarning("Advertencia", "No hay procesador nocturno activo")
+            return
+        
+        try:
+            self.nightly_processor.force_nightly_process()
+            self.add_log("🔧 Proceso nocturno forzado manualmente", "INFO")
+        except Exception as e:
+            self.add_log(f"❌ Error al forzar proceso nocturno: {str(e)}", "ERROR")
+    
+    def get_nightly_status(self):
+        """Obtener estado del procesador nocturno"""
+        if self.nightly_processor:
+            return self.nightly_processor.get_status()
+        return None
+    
+    def is_backup_in_progress(self):
+        """Verificar si hay un backup en progreso"""
+        return self.backup_in_progress
 
 def run_ui():
     # Crear la aplicación con tema moderno
