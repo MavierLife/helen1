@@ -96,7 +96,7 @@ def get_master_status(config):
         "-u", config['USER'], f"-p{config['PASSWORD']}",
         "-e", "SHOW MASTER STATUS\\G"
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = run(cmd)
     
     for line in result.stdout.split('\n'):
         if 'File:' in line:
@@ -118,8 +118,14 @@ def full_backup(backup_file, config):
         "--set-gtid-purged=OFF",   # <— evita SET @@GLOBAL.GTID_PURGED
         config['DB_NAME']
     ]
+    
+    # Esta bandera evita que se abra una ventana de CMD en Windows
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = subprocess.CREATE_NO_WINDOW
+
     with open(backup_file, "w", encoding="utf-8") as f:
-        subprocess.run(cmd, stdout=f, check=True)
+        subprocess.run(cmd, stdout=f, check=True, creationflags=creation_flags)
     print(f"Backup completo guardado en {backup_file}")
 
 def incremental_backup(backup_file, state, config):
@@ -135,8 +141,14 @@ def incremental_backup(backup_file, state, config):
         f"--database={config['DB_NAME']}",
         state["File"]
     ]
+    
+    # Esta bandera evita que se abra una ventana de CMD en Windows
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = subprocess.CREATE_NO_WINDOW
+        
     with open(backup_file, "a", encoding="utf-8") as f:
-        subprocess.run(cmd, stdout=f, check=True)
+        subprocess.run(cmd, stdout=f, check=True, creationflags=creation_flags)
     print(f"Incremental añadido a {backup_file}")
 
 def load_state(path):
