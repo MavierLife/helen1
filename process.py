@@ -116,6 +116,9 @@ class NightlyProcessor:
                 
                 # 5. Generar nuevo volcado completo y reiniciar proceso
                 self._initialize_new_cycle(was_running)
+
+                # 6. Limpiar la copia de seguridad del día anterior
+                self._clean_previous_day_backup()
                 
                 print("🎉 === PROCESO NOCTURNO COMPLETADO EXITOSAMENTE ===")
             else:
@@ -345,6 +348,31 @@ class NightlyProcessor:
         except Exception as e:
             print(f"⚠️ Error al crear archivo de información: {e}")
     
+    def _clean_previous_day_backup(self):
+        """Eliminar la carpeta de backup del día anterior al procesado."""
+        try:
+            # La copia procesada es de 'ayer', por lo que buscamos la de 'anteayer'
+            day_to_delete = datetime.now() - timedelta(days=2)
+            
+            # Listar todas las carpetas en el directorio de backups diarios
+            subfolders = [f.path for f in os.scandir(self.daily_backup_dir) if f.is_dir()]
+            
+            for folder_path in subfolders:
+                folder_name = os.path.basename(folder_path)
+                try:
+                    # Intentar parsear el nombre de la carpeta para ver si coincide con la fecha a eliminar
+                    folder_date = datetime.strptime(folder_name.split('_')[0], "%Y-%m-%d")
+                    if folder_date.date() == day_to_delete.date():
+                        print(f"🗑️ Eliminando backup antiguo: {folder_name}")
+                        shutil.rmtree(folder_path)
+                        print(f"✅ Carpeta de backup antigua eliminada: {folder_name}")
+                except (ValueError, IndexError):
+                    # Ignorar carpetas que no coinciden con el formato de fecha esperado
+                    continue
+                    
+        except Exception as e:
+            print(f"⚠️ Error al eliminar la carpeta de backup del día anterior: {e}")
+
     def _clean_temp_directory(self):
         """Limpiar el directorio temporal de backups"""
         try:

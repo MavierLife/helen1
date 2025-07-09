@@ -40,11 +40,52 @@ MYSQLBINLOG_CMD    = os.path.join(MYSQL_BIN_DIR, 'mysqlbinlog.exe')
 # ——————————————————————————
 
 def run(cmd):
-    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if res.returncode != 0:
-        print(f"ERROR ejecutando {' '.join(cmd)}:\n{res.stderr}", file=sys.stderr)
-        sys.exit(1)
-    return res.stdout
+    """Ejecutar un comando y capturar su salida, ocultando la ventana de consola en Windows."""
+    print(f"Ejecutando: {' '.join(cmd)}")
+    
+    # Esta bandera evita que se abra una ventana de CMD en Windows
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = subprocess.CREATE_NO_WINDOW
+        
+    try:
+        # Usamos un bloque try/except para manejar mejor los errores
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True, 
+            check=False,  # Lo ponemos en False para manejar el error manualmente
+            creationflags=creation_flags,
+            encoding='utf-8',
+            errors='ignore'
+        )
+
+        # Lanzar una excepción si el comando falló
+        if result.returncode != 0:
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, output=result.stdout, stderr=result.stderr
+            )
+
+        if result.stdout:
+            print(result.stdout.strip())
+        if result.stderr:
+            # Algunos comandos como mysqldump envían info a stderr aunque sea exitoso
+            print(result.stderr.strip(), file=sys.stderr)
+            
+        return result
+
+    except FileNotFoundError:
+        print(f"❌ Error: El comando '{cmd[0]}' no se encontró.", file=sys.stderr)
+        print("Asegúrate de que MySQL esté instalado y en el PATH del sistema.", file=sys.stderr)
+        raise
+    except subprocess.CalledProcessError as e:
+        print(f"🔥 Error al ejecutar comando: {' '.join(e.cmd)}", file=sys.stderr)
+        print(f"Código de salida: {e.returncode}", file=sys.stderr)
+        if e.stdout:
+            print(f"--- Salida Estándar ---\n{e.stdout.strip()}", file=sys.stderr)
+        if e.stderr:
+            print(f"--- Salida de Error ---\n{e.stderr.strip()}", file=sys.stderr)
+        raise
 
 def get_master_status(config):
     """Obtener el estado actual del master"""

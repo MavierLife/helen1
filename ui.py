@@ -13,10 +13,10 @@ import main  # Importamos nuestro módulo principal
 from process import create_nightly_processor  # Importar función del procesador nocturno
 
 class BackupUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Myhelen Backup")
-        self.root.geometry("1200x900")  # Aumentar tamaño para nuevos controles
+    def __init__(self, master):
+        self.master = master
+        self.master.title("Myhelen Backup")
+        self.master.geometry("1200x900")  # Aumentar tamaño para nuevos controles
         
         # Variables para configuración de BD
         self.host_var = tk.StringVar(value=main.HOST)
@@ -50,13 +50,17 @@ class BackupUI:
         self.setup_ui()
         self.check_log_queue()
         self.load_config()  # Cargar configuración guardada si existe
+        
+        # Iniciar procesador nocturno si está habilitado en la configuración
+        if self.enable_nightly_processor_var.get():
+            self.start_nightly_processor()
     
     def setup_ui(self):
         # Configurar el estilo
         style = ttk.Style()
         
         # Crear notebook para organizar en pestañas
-        notebook = ttk.Notebook(self.root, bootstyle="dark")
+        notebook = ttk.Notebook(self.master, bootstyle="dark")
         notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
         
         # ========== PESTAÑA PRINCIPAL ==========
@@ -213,23 +217,19 @@ class BackupUI:
         text_frame = ttk.Frame(logs_frame)
         text_frame.pack(fill=BOTH, expand=True)
         
-        self.log_text = scrolledtext.ScrolledText(
-            text_frame,
-            height=15,
-            state=DISABLED,
-            font=("Consolas", 10),
-            bg="#2b2b2b",
-            fg="#ffffff",
-            insertbackground="#ffffff",
-            selectbackground="#404040"
-        )
-        self.log_text.pack(fill=BOTH, expand=True)
+        self.log_text = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, height=10, state='disabled')
+        self.log_text.pack(expand=True, fill='both', padx=5, pady=5)
         
-        # Configurar tags para diferentes tipos de mensajes
-        self.log_text.tag_configure("SUCCESS", foreground="#4CAF50", font=("Consolas", 10, "bold"))
-        self.log_text.tag_configure("ERROR", foreground="#F44336", font=("Consolas", 10, "bold"))
-        self.log_text.tag_configure("WARNING", foreground="#FF9800", font=("Consolas", 10, "bold"))
-        self.log_text.tag_configure("INFO", foreground="#2196F3", font=("Consolas", 10, "bold"))
+        # Variables de estado para el procesador nocturno
+        self.enable_nightly_processor_var = tk.BooleanVar(value=True)
+        self.daily_backup_dir_var = tk.StringVar()
+        self.max_file_size_gb_var = tk.StringVar(value="1.0")
+        
+        # Configuración inicial del procesador nocturno
+        self.nightly_processor = None
+        
+        # Cola para comunicación entre hilos
+        self.log_queue = queue.Queue()
     
     def create_config_tab(self, parent):
         """Crear pestaña de configuración"""
@@ -750,7 +750,7 @@ class BackupUI:
         except queue.Empty:
             pass
         finally:
-            self.root.after(100, self.check_log_queue)
+            self.master.after(100, self.check_log_queue)
     
     def validate_interval(self):
         try:

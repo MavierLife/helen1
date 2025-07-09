@@ -1,0 +1,15 @@
+{
+  "HOST": "localhost",
+  "PORT": 3306,
+  "USER": "root",
+  "PASSWORD": "",
+  "DB_NAME": "helensystem_data",
+  "BACKUP_DIR": "C:/Users/Antonio/Documents/config",
+  "interval_hours": "1",
+  "interval_minutes": "0",
+  "enable_nightly_processor": true,
+  "daily_backup_dir": "C:/Users/Antonio/Documents/config",
+  "max_file_size_gb": "1.0",
+  "split_time_hour": "00",
+  "split_time_minute": "00"
+}
